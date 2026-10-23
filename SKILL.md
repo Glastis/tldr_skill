@@ -10,7 +10,7 @@ A repository using this skill has a `tldr/` folder that mirrors its tree: one `<
 The work is split in two, and the split matters:
 
 - **The tool**, `scripts/tldr.py` in this skill's folder, is deterministic and knows no programming language. It hashes files, keeps `tldr/` in shape, says what is missing or stale, writes the header of every `.tldr` and answers call-graph queries by reading the `.tldr` text. It never calls an LLM.
-- **You** read files and write the summaries. You never write a header or a hash: you cannot compute a SHA-256, and a wrong hash would make a stale summary look fresh.
+- **The LLM** reads files and writes the summaries: subagents on a fast model write them, and you coordinate (see "Creating or refreshing the summaries"). No LLM ever writes a header or a hash: it cannot compute a SHA-256, and a wrong hash would make a stale summary look fresh.
 
 Run the tool from the repository root with Python 3.11 or newer (standard library only, nothing to install):
 
@@ -54,14 +54,20 @@ What gets summarized: in a git repository, the files `git ls-files --cached --ot
 
 ## Creating or refreshing the summaries
 
+Delegate the writing and keep the coordination. Summarizing is plain reading, and `stamp` and `check` catch format errors and invented names, so the provider's fast, inexpensive model does it well: Haiku with Anthropic, the equivalent small model with another provider. Hand the summaries to subagents running that model, in parallel, and do only the coordination yourself: `sync`, `check`, splitting the work and checking the result. Write summaries yourself only if you cannot start subagents or choose their model, and tell the user, since it costs more.
+
 1. Run `tldr sync`, then `tldr check`.
 2. On a first generation, tell the user how many files `check` lists and wait for their go-ahead, since it means reading the whole repository once. Propose to `exclude` generated and vendored code in `.tldr.toml` first: summarizing it costs a lot and helps little. Offer to add the five reading rules above to the project's `CLAUDE.md` (or its equivalent), with the full command `python3 <this skill's folder>/scripts/tldr.py` instead of `tldr`, so that future sessions use the summaries.
-3. For each **file** listed as `missing` or `stale`, read it and write the body of its `.tldr` at the path shown after `->`, following "Writing a file summary" below. Leave an existing header alone; `stamp` replaces it.
-   - Spread the files over parallel subagents if you can, or hand them to a smaller model. Give each one its list of files, the path of this SKILL.md and the `tldr` command, and tell it to follow "Writing a file summary", then to stamp its own files and fix what `stamp` refuses.
-4. A file listed with `moved from …` was renamed with the same content: `sync` moved its summary but left it stale. Where qualified names hold the file's path (Python, Java, Go…), fix them; keep the rest of the text, then stamp it.
-5. Run `tldr stamp <the files>`. It refuses a body that has unresolved merge-conflict markers, no `role:` line, more than 5 lines for a non-text file, a function summary under 6 words, an unreadable function name or an unknown tag. Fix what it reports and stamp again.
-6. For each **folder** listed, write its `_dir.tldr` (the root's is `tldr/_index.tldr`) from its children's `.tldr` only, following "Writing a folder summary", then stamp it. Write a folder only once its children's summaries are written, since it is built from them. `stamp` refuses a folder until its children are fresh, but it sorts what it is given, so a single call can stamp every folder at once. A folder marked `stale` without `after children` often only needs restamping: its children's hashes changed, but its prose may still be accurate.
-7. Run `tldr check` again until it prints `ok`. A `dangling` line means a `calls:` name matches no symbol in any `.tldr`: the callee was removed or renamed, its file was moved and its names still hold the old path, or the name is wrong. Fix the `.tldr` at fault and restamp it. During a first generation, edges towards files that are not summarized yet stay dangling until those files are done.
+3. Split the **files** listed as `missing` or `stale` into batches, grouped by folder when you can, and give each batch to a subagent on the fast model. Give it its list of files, the path of this SKILL.md and the full `tldr` command, and tell it to:
+   - read each file and write the body of its `.tldr`, at the path `check` shows after `->`, following "Writing a file summary";
+   - leave an existing header alone, since `stamp` replaces it;
+   - run `tldr stamp` on its own files, fix whatever `stamp` refuses, and report any file it could not summarize.
+
+   `stamp` refuses a body that has unresolved merge-conflict markers, no `role:` line, more than 5 lines for a non-text file, a function summary under 6 words, an unreadable function name or an unknown tag.
+4. A file listed with `moved from …` was renamed with the same content: `sync` moved its summary but left it stale. Put it in a batch like any stale file. Where qualified names hold the file's path (Python, Java, Go…), the subagent fixes them, keeps the rest of the text and stamps it.
+5. When the subagents are done, run `tldr check`. Hand any file still listed back to a subagent, with what `check` says about it.
+6. Then the **folders**, deepest first. Give them to subagents on the fast model the same way, one level of depth at a time, since a `_dir.tldr` is written from its children's `.tldr` only. The root's summary, `tldr/_index.tldr`, comes last. Each subagent follows "Writing a folder summary" and stamps its folders; `stamp` refuses a folder until its children are fresh. A folder marked `stale` without `after children` often only needs restamping: its children's hashes changed, but its prose may still be accurate. You can check that and restamp it yourself.
+7. Run `tldr check` again until it prints `ok`. A `dangling` line means a `calls:` name matches no symbol in any `.tldr`: the callee was removed or renamed, its file was moved and its names still hold the old path, or the name is wrong. Hand the `.tldr` at fault back to a subagent, to fix and restamp. During a first generation, edges towards files that are not summarized yet stay dangling until those files are done.
 
 ### After a git merge
 
