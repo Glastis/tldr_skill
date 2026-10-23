@@ -54,7 +54,16 @@ What gets summarized: in a git repository, the files `git ls-files --cached --ot
 
 ## Creating or refreshing the summaries
 
-Delegate the writing and keep the coordination. Summarizing is plain reading, and `stamp` and `check` catch format errors and invented names, so the provider's fast, inexpensive model does it well: Haiku with Anthropic, the equivalent small model with another provider. Hand the summaries to subagents running that model, in parallel, and do only the coordination yourself: `sync`, `check`, splitting the work and checking the result. Write summaries yourself only if you cannot start subagents or choose their model, and tell the user, since it costs more.
+Delegate the writing and keep the coordination. Summarizing is plain reading, and `stamp` and `check` catch format errors and invented names, so the fast, inexpensive model of the provider you run on does it well:
+
+| Provider | Fast model |
+|---|---|
+| Anthropic | Claude Haiku (`claude-haiku-5-5`) |
+| OpenAI | GPT Luna (`gpt-6-luna`) |
+| DeepSeek | DeepSeek Flash (`deepseek-flash`) |
+| Z.ai | GLM Flash (GLM-5.3-Flash; GLM-4.7-Flash is free) |
+
+These are the October 2026 names: if a newer model of the same tier exists, use it. With another provider, use its smallest fast model. Hand the summaries to subagents running that model, in parallel, and do only the coordination yourself: `sync`, `check`, splitting the work and checking the result. Write summaries yourself only if you cannot start subagents or choose their model, and tell the user, since it costs more.
 
 1. Run `tldr sync`, then `tldr check`.
 2. On a first generation, tell the user how many files `check` lists and wait for their go-ahead, since it means reading the whole repository once. Propose to `exclude` generated and vendored code in `.tldr.toml` first: summarizing it costs a lot and helps little. Offer to add the five reading rules above to the project's `CLAUDE.md` (or its equivalent), with the full command `python3 <this skill's folder>/scripts/tldr.py` instead of `tldr`, so that future sessions use the summaries.
